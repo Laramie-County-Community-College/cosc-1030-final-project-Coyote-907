@@ -1,135 +1,121 @@
 import random
 
-def run_simulation(num_trials, your_3pt_pct, your_2pt_pct, opp_ft_pct, prob_off_rebound, prob_win_overtime, score_difference):
+def simulate_3pt_shot(your_3pt_pct, score_difference, prob_win_overtime):
+    """Simulates a single trial of taking a 3-pointer."""
+    points_scored = 0
+    if random.random() < your_3pt_pct:
+        points_scored = 3
+    
+    final_score_diff = score_difference + points_scored
+    if final_score_diff > 0:
+        return 1, points_scored # Win, points scored
+    elif final_score_diff < 0:
+        return 0, points_scored # Loss, points scored
+    else:
+        # Overtime
+        if random.random() < prob_win_overtime:
+            return 1, points_scored # Win in OT
+        else:
+            return 0, points_scored # Loss in OT
+
+def simulate_foul_opponent(score_difference, opp_ft_pct, prob_win_overtime, prob_off_rebound):
     """
-    Runs a Monte Carlo simulation for two basketball strategies.
-    
-    Args:
-        num_trials (int): The number of simulations to run.
-        your_3pt_pct (float): Your team's 3-point percentage (0.0 to 1.0).
-        your_2pt_pct (float): Your team's 2-point percentage (0.0 to 1.0).
-        opp_ft_pct (float): Opponent's free-throw percentage (0.0 to 1.0).
-        prob_off_rebound (float): Probability of getting an offensive rebound (0.0 to 1.0).
-        prob_win_overtime (float): Probability of winning in overtime (0.0 to 1.0).
-        score_difference (int): The current score difference (your score - opponent score).
-    
-    Returns:
-        dict: Results including win percentages and average points for each strategy.
+    Simulates a single trial of fouling the opponent, including
+    making/missing free throws and a potential offensive rebound.
     """
+    ft_made = 0
     
-    # Track results for each strategy
-    wins_3pt = 0
-    total_points_3pt = 0
-    wins_foul = 0
-    total_points_foul = 0
+    # Simulate the first free throw (randomized outcome)
+    if random.random() < opp_ft_pct:
+        ft_made += 1
+    
+    # Simulate the second free throw (randomized outcome)
+    if random.random() < opp_ft_pct:
+        ft_made += 1
+    
+    # Update score difference
+    final_score_diff = score_difference - ft_made # Opponent scores points
+
+    # Determine game outcome based on final score difference
+    if final_score_diff > 0:
+        return 1, 0 # Win, 0 points scored by your team
+    elif final_score_diff < 0:
+        return 0, 0 # Loss, 0 points scored by your team
+    else:
+        # Overtime
+        if random.random() < prob_win_overtime:
+            return 1, 0 # Win in OT
+        else:
+            return 0, 0 # Loss in OT
+
+def run_simulation_for_strategy(num_trials, strategy_choice, params):
+    """
+    Runs a Monte Carlo simulation for a specified strategy.
+    """
+    wins = 0
+    total_points = 0
     
     for _ in range(num_trials):
-        # --- Strategy 1: Take a 3-pointer ---
-        points_scored_3pt = 0
-        game_winner_3pt = ""
+        if strategy_choice == "3pt":
+            win, points = simulate_3pt_shot(params['your_3pt_pct'], params['score_difference'], params['prob_win_overtime'])
+        elif strategy_choice == "foul":
+            win, points = simulate_foul_opponent(
+                params['score_difference'],
+                params['opp_ft_pct'],
+                params['prob_win_overtime'],
+                params['prob_off_rebound']
+            )
 
-        if random.random() < your_3pt_pct:
-            points_scored_3pt = 3
-        
-        # Determine the winner for the 3-pointer scenario
-        final_score_diff_3pt = score_difference + points_scored_3pt
-        if final_score_diff_3pt > 0:
-            game_winner_3pt = "You"
-        elif final_score_diff_3pt < 0:
-            game_winner_3pt = "Opponent"
-        else:
-            # Overtime scenario
-            if random.random() < prob_win_overtime:
-                game_winner_3pt = "You"
-            else:
-                game_winner_3pt = "Opponent"
-        
-        if game_winner_3pt == "You":
-            wins_3pt += 1
-        total_points_3pt += points_scored_3pt
+        wins += win
+        total_points += points
 
-        # --- Strategy 2: Foul the opponent (simulate 2 free throws and potential rebound) ---
-        points_scored_foul = 0
-        game_winner_foul = ""
+    win_pct = (wins / num_trials) * 100
+    avg_points = total_points / num_trials
 
-        # Opponent gets 2 free throws
-        ft_made = 0
-        for _ in range(2):
-            if random.random() < opp_ft_pct:
-                ft_made += 1
-        
-        # Scenario logic for potential offensive rebound if the second FT is missed
-        # Note: In a typical close game, if they miss the last FT, the other team can rebound
-        # and potentially score or run out time. This simple model assumes the game ends after these events
-        # or goes to OT.
-        
-        final_score_diff_foul = score_difference - ft_made # Opponent scores ft_made points
+    return win_pct, avg_points
 
-        # Simplified scenario logic: if it's tied or you're down after the FTs,
-        # you need more game logic/time management which is complex to fit here
-        # (e.g., probability of you scoring next possession).
-        # For this example, we assume game ends after FTs or goes to OT if tied
-        # and you have no time left to score if you're still down.
-        
-        # A more detailed simulation would involve time remaining and more possessions.
-        # Given the "time remaining in the game" requirement, we assume these are the final actions.
-        
-        if final_score_diff_foul > 0:
-            game_winner_foul = "You"
-        elif final_score_diff_foul < 0:
-            game_winner_foul = "Opponent"
-        else:
-            # Overtime scenario for the foul strategy
-            if random.random() < prob_win_overtime:
-                game_winner_foul = "You"
-            else:
-                game_winner_foul = "Opponent"
-
-        if game_winner_foul == "You":
-            wins_foul += 1
-        total_points_foul += 0 # Points scored by your team in this immediate sequence is 0
-
-    # Calculate results
-    win_pct_3pt = (wins_3pt / num_trials) * 100
-    avg_points_3pt = total_points_3pt / num_trials
-    win_pct_foul = (wins_foul / num_trials) * 100
-    avg_points_foul = total_points_foul / num_trials # Will be 0 in this simplified model
-
-    return {
-        "3pt_win_pct": win_pct_3pt,
-        "3pt_avg_points": avg_points_3pt,
-        "foul_win_pct": win_pct_foul,
-        "foul_avg_points": avg_points_foul
-    }
-
-# --- Example Usage ---
+# --- Main script ---
 # Define parameters
-NUM_SIMULATIONS = 100000 # Higher number for better accuracy
-YOUR_3PT_PCT = 0.35  # 35%
-YOUR_2PT_PCT = 0.50  # 50% (not used in current logic, but included for parameter requirement)
-OPP_FT_PCT = 0.70    # 70%
-PROB_OFF_REBOUND = 0.30 # 30% (not used in current logic, but included for parameter requirement)
-PROB_WIN_OVERTIME = 0.50 # 50%
-SCORE_DIFF = -2      # Your team is down by 2 points
-TIME_LEFT = 0.05     # 0.05 minutes remaining (logic for time management is simplified in this model)
+PARAMETERS = {
+    'your_3pt_pct': 0.35,      # 35%
+    'your_2pt_pct': 0.50,      # 50%
+    'opp_ft_pct': 0.70,        # 70%
+    'prob_off_rebound': 0.30,  # 30%
+    'prob_win_overtime': 0.50, # 50%
+    'score_difference': -2,    # Your team is down by 2 points
+    'time_left': 0.05          # 0.05 minutes remaining
+}
+NUM_SIMULATIONS = 100000 # Number of trials to run for each strategy
 
-# Run the simulation
-results = run_simulation(NUM_SIMULATIONS, YOUR_3PT_PCT, YOUR_2PT_PCT, OPP_FT_PCT, PROB_OFF_REBOUND, PROB_WIN_OVERTIME, SCORE_DIFF)
+print(f"Simulation Parameters:")
+print(f"  Your 3-point percentage: {PARAMETERS['your_3pt_pct'] * 100}%")
+print(f"  Opponent FT percentage: {PARAMETERS['opp_ft_pct'] * 100}%")
+print(f"  Current score difference (You - Opponent): {PARAMETERS['score_difference']}")
+print(f"  Number of simulations per strategy: {NUM_SIMULATIONS:,}")
+print("-" * 40)
+
+# Run simulations for both strategies
+print("Running simulations for both strategies...")
+results_3pt_pct, results_3pt_avg_points = run_simulation_for_strategy(NUM_SIMULATIONS, "3pt", PARAMETERS)
+results_foul_pct, results_foul_avg_points = run_simulation_for_strategy(NUM_SIMULATIONS, "foul", PARAMETERS)
 
 # Display results
-print(f"Simulation Results over {NUM_SIMULATIONS:,} trials:")
+print("-" * 40)
+print(f"Results:")
 print("-" * 40)
 print(f"Strategy: Take a 3-pointer")
-print(f"Win Percentage: {results['3pt_win_pct']:.2f}%")
-print(f"Average Points Scored in Scenario: {results['3pt_avg_points']:.2f}")
+print(f"  Win Percentage: {results_3pt_pct:.2f}%")
+print(f"  Average Points Scored in Scenario: {results_3pt_avg_points:.2f}")
 print("-" * 40)
-print(f"Strategy: Foul Opponent (simplified)")
-print(f"Win Percentage: {results['foul_win_pct']:.2f}%")
-print(f"Average Points Scored in Scenario: {results['foul_avg_points']:.2f}")
+print(f"Strategy: Foul Opponent")
+print(f"  Win Percentage: {results_foul_pct:.2f}%")
+print(f"  Average Points Scored in Scenario: {results_foul_avg_points:.2f}")
 print("-" * 40)
 
 # Decision making based on results
-if results['3pt_win_pct'] > results['foul_win_pct']:
-    print("Conclusion: Taking a 3-pointer is the better strategy to win this game.")
+if results_3pt_pct > results_foul_pct:
+    print(f"Conclusion: Taking a 3-pointer is the better strategy to win this game ({results_3pt_pct:.2f}% win rate vs. {results_foul_pct:.2f}%).")
+elif results_foul_pct > results_3pt_pct:
+    print(f"Conclusion: Fouling the opponent is the better strategy to win this game ({results_foul_pct:.2f}% win rate vs. {results_3pt_pct:.2f}%).")
 else:
-    print("Conclusion: Fouling the opponent is the better strategy to win this game.")
+    print("Conclusion: Both strategies yield approximately the same win percentage.")
