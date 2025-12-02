@@ -22,11 +22,11 @@ class Player:
 # --- Helper Functions ---
 
 def format_time_minutes_seconds(minutes_float):
-    """Formats a float of minutes into a string 'M:SS' like a game clock."""
+    """Formats a float of minutes into a string 'MM:SS' like a game clock."""
     total_seconds = int(minutes_float * 60)
     minutes = total_seconds // 60
     seconds = total_seconds % 60
-    return f"{minutes}:{seconds:02}"
+    return f"{minutes:02}:{seconds:02}"
 
 def get_random_game_time():
     """
@@ -305,6 +305,6 @@ print(f"Conclusion for match-up: {selected_your_player.name} vs. {selected_opp_p
 print(f"- Your Player ({selected_your_player.name}) best skill: {your_best_skill}")
 print(f"- Opponent Player ({selected_opp_player.name}) best skill: {opp_best_skill}")
 print(f"- Recommended Strategy: {best_strategy_name}")
-print(f"- Estimated Win Rate: {best_win_rate:.2f}%")
+print(f"- Estimated Win Chance: {best_win_rate:.2f}%")
 print(f"- Estimated Loss Chance: {best_loss_rate:.2f}%") 
 print(f"- Confidence Level for Results: {CONFIDENCE_LEVEL_REPORT*100:.2f}%")
