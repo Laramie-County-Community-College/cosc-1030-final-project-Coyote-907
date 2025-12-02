@@ -1,121 +1,310 @@
 import random
+import math
+import scipy.stats as stats 
+import numpy as np 
 
-def simulate_3pt_shot(your_3pt_pct, score_difference, prob_win_overtime):
-    """Simulates a single trial of taking a 3-pointer."""
-    points_scored = 0
-    if random.random() < your_3pt_pct:
-        points_scored = 3
-    
-    final_score_diff = score_difference + points_scored
-    if final_score_diff > 0:
-        return 1, points_scored # Win, points scored
-    elif final_score_diff < 0:
-        return 0, points_scored # Loss, points scored
-    else:
-        # Overtime
-        if random.random() < prob_win_overtime:
-            return 1, points_scored # Win in OT
+
+# --- Player Class Definition ---
+class Player:
+    def __init__(self, name, pts2_pct, pts3_pct, ft_pct, offensive_rebound_pct, ball_handling):
+        self.name = name
+        self.pts2_pct = pts2_pct
+        self.pts3_pct = pts3_pct
+        self.ft_pct = ft_pct
+        self.offensive_rebound_pct = offensive_rebound_pct
+        self.ball_handling = ball_handling
+
+    def __str__(self):
+        return (f"{self.name}:\n"
+                f"  2PT%: {self.pts2_pct:.1%}, 3PT%: {self.pts3_pct:.1%}, FT%: {self.ft_pct:.1%}\n"
+                f"  Off Reb%: {self.offensive_rebound_pct:.1%}, Ball Handling: {self.ball_handling:.1%}")
+
+# --- Helper Functions ---
+
+def format_time_minutes_seconds(minutes_float):
+    """Formats a float of minutes into a string 'M:SS' like a game clock."""
+    total_seconds = int(minutes_float * 60)
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}:{seconds:02}"
+
+def get_random_game_time():
+    """
+    Returns a random time left in minutes between 0.05 (3s) and 0.167 (10s).
+    """
+    return random.uniform(0.05, 0.167)
+
+def calculate_confidence_interval(wins, num_trials, confidence_level=0.95):
+    """Calculates the confidence interval for a binomial proportion (win rate)."""
+    p_hat = wins / num_trials
+    z_score = stats.norm.ppf((1 + confidence_level) / 2)
+    std_err = math.sqrt((p_hat * (1 - p_hat)) / num_trials)
+    margin_of_error = z_score * std_err
+    lower_bound = (p_hat - margin_of_error) * 100
+    upper_bound = (p_hat + margin_of_error) * 100
+    return lower_bound, upper_bound
+
+def simulate_overtime(your_player, opp_player):
+    """
+    Simulates a dynamic overtime period (sudden death model) until a winner is found.
+    Returns 1 for a win, 0 for a loss. Both players' stats are used here.
+    """
+    ot_score_diff = 0
+    while True:
+        # Your possession logic (assume a 2pt attempt in OT)
+        if random.random() < your_player.pts2_pct:
+            ot_score_diff += 2
+            if ot_score_diff > 0: return 1
+        # Opponent possession logic (assume a 2pt attempt in OT)
+        if random.random() < opp_player.pts2_pct:
+            ot_score_diff -= 2
+            if ot_score_diff < 0: return 0
+
+def run_game_scenario(strategy_choice, your_player, opp_player, params):
+    """
+    Simulates a single complete final sequence with alternating possessions, including
+    turnovers and offensive rebounds. Returns 1 for win, 0 for loss.
+    """
+    current_score_diff = params['score_difference']
+    points_scored_by_you = 0
+    time_left = params['time_left']
+    is_your_turn = True # Team currently trailing or tied gets first possession
+
+    AVG_TIME_PER_SHOT = 0.005 # ~3 seconds
+    AVG_TIME_PER_REBOUND_ATTEMPT = 0.002 # ~1.2 seconds
+    OPPONENT_DEFB_PCT = 1.0 - opp_player.offensive_rebound_pct # Simplified defensive counterpart
+
+    while time_left > 0 and abs(current_score_diff) < 4:
+        
+        if is_your_turn:
+            # Check for turnover first
+            # Simplified turnover: Low ball handling increases turnover risk
+            if random.random() > your_player.ball_handling: 
+                # Turnover, possession switches
+                is_your_turn = False
+                time_left -= random.uniform(0.002, 0.004) # Time runs off court
+                continue
+
+            # Your team's possession logic (shot attempt)
+            shot_made = False
+            if strategy_choice == "3pt":
+                if random.random() < your_player.pts3_pct:
+                    current_score_diff += 3
+                    points_scored_by_you += 3
+                    shot_made = True
+            else: # 2pt or Overtime strategy use 2pt attempts
+                if random.random() < your_player.pts2_pct:
+                    current_score_diff += 2
+                    points_scored_by_you += 2
+                    shot_made = True
+            
+            if shot_made:
+                is_your_turn = False # Possession over
+                time_left -= AVG_TIME_PER_SHOT
+            else:
+                # Missed shot: Check for offensive rebound
+                time_left -= AVG_TIME_PER_SHOT # Time used for shot and flight
+                if random.random() < your_player.offensive_rebound_pct:
+                    # Successful offensive rebound, the loop continues for another shot attempt
+                    time_left -= AVG_TIME_PER_REBOUND_ATTEMPT
+                    # is_your_turn remains True
+                else:
+                    is_your_turn = False # Defensive rebound, possession switches
+                    time_left -= AVG_TIME_PER_REBOUND_ATTEMPT
+            
         else:
-            return 0, points_scored # Loss in OT
+            # Opponent's possession logic (assume a 2pt attempt, no complex logic for them for brevity)
+            # Simplified opponent turnover rate: 1 - ball handling
+            if random.random() > selected_opp_player.ball_handling:
+                is_your_turn = True # Turnover, your turn
+                time_left -= random.uniform(0.002, 0.004)
+                continue
 
-def simulate_foul_opponent(score_difference, opp_ft_pct, prob_win_overtime, prob_off_rebound):
-    """
-    Simulates a single trial of fouling the opponent, including
-    making/missing free throws and a potential offensive rebound.
-    """
-    ft_made = 0
-    
-    # Simulate the first free throw (randomized outcome)
-    if random.random() < opp_ft_pct:
-        ft_made += 1
-    
-    # Simulate the second free throw (randomized outcome)
-    if random.random() < opp_ft_pct:
-        ft_made += 1
-    
-    # Update score difference
-    final_score_diff = score_difference - ft_made # Opponent scores points
+            if random.random() < opp_player.pts2_pct:
+                current_score_diff -= 2 # Opponent scores
+                time_left -= AVG_TIME_PER_SHOT
+            else:
+                # Opponent misses, check for your defensive rebound
+                time_left -= AVG_TIME_PER_SHOT
+                if random.random() < OPPONENT_DEFB_PCT:
+                     is_your_turn = True # Your defensive rebound, your turn
+                     time_left -= AVG_TIME_PER_REBOUND_ATTEMPT
+                else:
+                     time_left -= AVG_TIME_PER_REBOUND_ATTEMPT # Opponent gets offensive rebound
+                     # is_your_turn remains False
 
-    # Determine game outcome based on final score difference
-    if final_score_diff > 0:
-        return 1, 0 # Win, 0 points scored by your team
-    elif final_score_diff < 0:
-        return 0, 0 # Loss, 0 points scored by your team
+
+    if current_score_diff > 0:
+        return 1, points_scored_by_you
+    elif current_score_diff < 0:
+        return 0, points_scored_by_you
     else:
-        # Overtime
-        if random.random() < prob_win_overtime:
-            return 1, 0 # Win in OT
-        else:
-            return 0, 0 # Loss in OT
+        # Tie game goes to overtime.
+        ot_win = simulate_overtime(your_player, opp_player)
+        return ot_win, points_scored_by_you
 
-def run_simulation_for_strategy(num_trials, strategy_choice, params):
+
+def run_simulation_for_strategy(num_trials, strategy_choice, your_player, opp_player, initial_params):
     """
-    Runs a Monte Carlo simulation for a specified strategy.
+    Runs a Monte Carlo simulation for a specified strategy using the provided specific players,
+    varying the time left and score difference for each trial.
     """
     wins = 0
     total_points = 0
-    
-    for _ in range(num_trials):
-        if strategy_choice == "3pt":
-            win, points = simulate_3pt_shot(params['your_3pt_pct'], params['score_difference'], params['prob_win_overtime'])
-        elif strategy_choice == "foul":
-            win, points = simulate_foul_opponent(
-                params['score_difference'],
-                params['opp_ft_pct'],
-                params['prob_win_overtime'],
-                params['prob_off_rebound']
-            )
+    failures = 0
+    score_diffs_used = [] 
 
+    for _ in range(num_trials):
+        initial_params['time_left'] = get_random_game_time() 
+        score_diff_for_trial = random.randint(-2, 0) 
+        initial_params['score_difference'] = score_diff_for_trial
+        score_diffs_used.append(score_diff_for_trial)
+        
+        win, points = run_game_scenario(strategy_choice, your_player, opp_player, initial_params)
         wins += win
+        if win == 0:
+            failures += 1
         total_points += points
 
-    win_pct = (wins / num_trials) * 100
     avg_points = total_points / num_trials
+    unique_score_diffs = set(score_diffs_used)
+    return wins, failures, avg_points, unique_score_diffs
 
-    return win_pct, avg_points
 
 # --- Main script ---
-# Define parameters
-PARAMETERS = {
-    'your_3pt_pct': 0.35,      # 35%
-    'your_2pt_pct': 0.50,      # 50%
-    'opp_ft_pct': 0.70,        # 70%
-    'prob_off_rebound': 0.30,  # 30%
-    'prob_win_overtime': 0.50, # 50%
-    'score_difference': -2,    # Your team is down by 2 points
-    'time_left': 0.05          # 0.05 minutes remaining
+
+GENERIC_NAMES = ["Alex", "Blake", "Casey", "Drew", "Evan", "Finn", "Gavin", "Hugo", "Ian", "Jack", "Kyle", "Liam", "Milo", "Nate", "Owen", "Paul", "Quinn", "Ryan", "Sean", "Troy", "Vince", "Will", "Xavier", "Zane"]
+
+# Base Archetypes (mean values)
+PLAYER_ARCHETYPES = {
+    "Bench Warmer": {
+        'pts2_pct': 0.20, 'pts3_pct': 0.05, 'ft_pct': 0.40, 'offensive_rebound_pct': 0.20, 'ball_handling': 0.30
+    },
+    "Average Player": {
+        'pts2_pct': 0.45, 'pts3_pct': 0.25, 'ft_pct': 0.70, 'offensive_rebound_pct': 0.10, 'ball_handling': 0.70
+    },
+    "Skilled Player": {
+        'pts2_pct': 0.70, 'pts3_pct': 0.50, 'ft_pct': 0.95, 'offensive_rebound_pct': 0.01, 'ball_handling': 0.95
+    }
 }
-NUM_SIMULATIONS = 100000 # Number of trials to run for each strategy
+
+def create_random_archetype_player(archetype_role):
+    """
+    Selects a random archetype and assigns stats with *significant* normal distribution variance
+    around the archetype's mean values, potentially creating more unique players.
+    """
+    archetype_name, base_stats = random.choice(list(PLAYER_ARCHETYPES.items()))
+    full_name = f"{random.choice(GENERIC_NAMES)} - {archetype_name}" 
+    # Increased scale (std dev) from 0.05/0.07/0.08 to force more randomization in skill values
+    return Player(
+        name=full_name,
+        pts2_pct=np.clip(np.random.normal(loc=base_stats['pts2_pct'], scale=0.10), 0.0, 1.0),
+        pts3_pct=np.clip(np.random.normal(loc=base_stats['pts3_pct'], scale=0.15), 0.0, 1.0),
+        ft_pct=np.clip(np.random.normal(loc=base_stats['ft_pct'], scale=0.15), 0.0, 1.0),
+        offensive_rebound_pct=np.clip(np.random.normal(loc=base_stats['offensive_rebound_pct'], scale=0.08), 0.0, 1.0),
+        ball_handling=np.clip(np.random.normal(loc=base_stats['ball_handling'], scale=0.10), 0.0, 1.0)
+    )
+
+selected_your_player = create_random_archetype_player("Your Team Player")
+selected_opp_player = create_random_archetype_player("Opponent Player")
+
+# Set the confidence level to be a variable random value between 40% and 90%
+CONFIDENCE_LEVEL_REPORT = random.uniform(0.40, 0.90) 
+
+PARAMETERS = {
+    'score_difference': -2,    
+    'time_left': 0.0 
+}
+NUM_SIMULATIONS = 100000
 
 print(f"Simulation Parameters:")
-print(f"  Your 3-point percentage: {PARAMETERS['your_3pt_pct'] * 100}%")
-print(f"  Opponent FT percentage: {PARAMETERS['opp_ft_pct'] * 100}%")
-print(f"  Current score difference (You - Opponent): {PARAMETERS['score_difference']}")
+print(f"  Selected Your Player: {selected_your_player.name}")
+print(f"  Selected Opponent Player: {selected_opp_player.name}")
+print(f"  Current score difference (You - Opponent): Varies per trial (Tied, Down by 1, or 2 points)")
+print(f"  Time available (clock format): Varies per trial (3 sec to 10 sec)")
 print(f"  Number of simulations per strategy: {NUM_SIMULATIONS:,}")
+print(f"  Confidence Level for Results: {CONFIDENCE_LEVEL_REPORT*100:.2f}%")
 print("-" * 40)
 
-# Run simulations for both strategies
-print("Running simulations for both strategies...")
-results_3pt_pct, results_3pt_avg_points = run_simulation_for_strategy(NUM_SIMULATIONS, "3pt", PARAMETERS)
-results_foul_pct, results_foul_avg_points = run_simulation_for_strategy(NUM_SIMULATIONS, "foul", PARAMETERS)
+print("Running simulations for all strategies (averaging across variable time/score scenarios)...")
+wins_3pt, failures_3pt, results_3pt_avg_points, sd_3pt_used = run_simulation_for_strategy(NUM_SIMULATIONS, "3pt", selected_your_player, selected_opp_player, PARAMETERS.copy())
+wins_2pt, failures_2pt, results_2pt_avg_points, sd_2pt_used = run_simulation_for_strategy(NUM_SIMULATIONS, "2pt", selected_your_player, selected_opp_player, PARAMETERS.copy())
+wins_ot, failures_ot, results_ot_avg_points, sd_ot_used = run_simulation_for_strategy(NUM_SIMULATIONS, "overtime", selected_your_player, selected_opp_player, PARAMETERS.copy())
 
-# Display results
-print("-" * 40)
-print(f"Results:")
-print("-" * 40)
-print(f"Strategy: Take a 3-pointer")
-print(f"  Win Percentage: {results_3pt_pct:.2f}%")
-print(f"  Average Points Scored in Scenario: {results_3pt_avg_points:.2f}")
-print("-" * 40)
-print(f"Strategy: Foul Opponent")
-print(f"  Win Percentage: {results_foul_pct:.2f}%")
-print(f"  Average Points Scored in Scenario: {results_foul_avg_points:.2f}")
-print("-" * 40)
 
-# Decision making based on results
-if results_3pt_pct > results_foul_pct:
-    print(f"Conclusion: Taking a 3-pointer is the better strategy to win this game ({results_3pt_pct:.2f}% win rate vs. {results_foul_pct:.2f}%).")
-elif results_foul_pct > results_3pt_pct:
-    print(f"Conclusion: Fouling the opponent is the better strategy to win this game ({results_foul_pct:.2f}% win rate vs. {results_3pt_pct:.2f}%).")
-else:
-    print("Conclusion: Both strategies yield approximately the same win percentage.")
+# --- Display Results in specified format ---
+
+def print_formatted_results(strategy_name_key, wins, failures, num_trials, avg_points, confidence_level):
+    win_rate_pct = (wins / num_trials) * 100
+    failure_rate_pct = (failures / num_trials) * 100
+    lower, upper = calculate_confidence_interval(wins, num_trials, confidence_level)
+    
+    display_name = {
+        "3pt": "Take a 3-pointer",
+        "2pt": "Take a 2-pointer",
+        "overtime": "Play for Overtime"
+    }.get(strategy_name_key, strategy_name_key)
+
+    print(f"Strategy: {display_name}")
+    print(f"  Win Count: {wins:,} out of {num_trials:,}")
+    print(f"  Win Percentage: {win_rate_pct:.2f}% ({confidence_level*100:.2f}% CI: {lower:.2f}% to {upper:.2f}%)")
+    print(f"  Failure Count (Losses): {failures:,} out of {num_trials:,}")
+    print(f"  Strategy Failure Rate: {failure_rate_pct:.2f}%")
+    print(f"  Average Points Scored in Scenario: {avg_points:.2f}")
+    print("-" * 40)
+
+def get_best_skill_description(player_object):
+    """Identifies the single highest stat percentage for a player and returns a descriptive string."""
+    stats_map = {
+        player_object.pts2_pct: "2-pointer percentage",
+        player_object.pts3_pct: "3-pointer percentage",
+        player_object.ft_pct: "free-throw percentage",
+        player_object.offensive_rebound_pct: "offensive rebounding percentage",
+        player_object.ball_handling: "ball handling ability"
+    }
+    # Find the maximum percentage value
+    best_stat_value = max([
+        player_object.pts2_pct,
+        player_object.pts3_pct,
+        player_object.ft_pct,
+        player_object.offensive_rebound_pct,
+        player_object.ball_handling
+    ])
+    # Return the corresponding description and value
+    return f"{stats_map[best_stat_value]} ({best_stat_value:.1%} efficiency)"
+
+
+print_formatted_results("3pt", wins_3pt, failures_3pt, NUM_SIMULATIONS, results_3pt_avg_points, CONFIDENCE_LEVEL_REPORT)
+print_formatted_results("2pt", wins_2pt, failures_2pt, NUM_SIMULATIONS, results_2pt_avg_points, CONFIDENCE_LEVEL_REPORT)
+print_formatted_results("overtime", wins_ot, failures_ot, NUM_SIMULATIONS, results_ot_avg_points, CONFIDENCE_LEVEL_REPORT)
+
+# Determine and print conclusion
+results_dict = {
+    "Taking a 3-pointer": wins_3pt,
+    "Taking a 2-pointer": wins_2pt,
+    "Playing for Overtime": wins_ot
+}
+
+failures_dict = {
+    "Taking a 3-pointer": failures_3pt,
+    "Taking a 2-pointer": failures_2pt,
+    "Playing for Overtime": failures_ot
+}
+    
+best_strategy_name = max(results_dict, key=results_dict.get)
+max_wins = results_dict[best_strategy_name]
+best_win_rate = (max_wins / NUM_SIMULATIONS) * 100
+
+best_strategy_failures = failures_dict[best_strategy_name]
+best_loss_rate = (best_strategy_failures / NUM_SIMULATIONS) * 100
+
+your_best_skill = get_best_skill_description(selected_your_player)
+opp_best_skill = get_best_skill_description(selected_opp_player)
+    
+print(f"Conclusion for match-up: {selected_your_player.name} vs. {selected_opp_player.name}:")
+print(f"- Your Player ({selected_your_player.name}) best skill: {your_best_skill}")
+print(f"- Opponent Player ({selected_opp_player.name}) best skill: {opp_best_skill}")
+print(f"- Recommended Strategy: {best_strategy_name}")
+print(f"- Estimated Win Rate: {best_win_rate:.2f}%")
+print(f"- Estimated Loss Chance: {best_loss_rate:.2f}%") 
+print(f"- Confidence Level for Results: {CONFIDENCE_LEVEL_REPORT*100:.2f}%")
